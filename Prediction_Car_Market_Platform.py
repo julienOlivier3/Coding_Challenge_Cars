@@ -40,7 +40,7 @@ from imblearn.over_sampling import SMOTE
 from imblearn.under_sampling import TomekLinks
 from IPython.display import Markdown as md
 
-# In this notebook two vanilla feed forward neural networks are trained using PyTorch. If you want to replicate the code, please specify on which compute device you want to conduct the training. If set to 'cuda'  GPU acceleratio is used. I have a NVIDIA GPU available on my local machine, so device defaults to 'cuda'.ed.
+# In this notebook two vanilla feed forward neural networks are trained using PyTorch. If you want to replicate the code, please specify on which compute device you want to conduct the training. If set to 'cuda' GPU acceleration is used. I have a NVIDIA GPU available on my local machine, so device defaults to 'cuda'.
 
 device='cuda' # change to 'cpu' if no GPU is available
 
@@ -105,7 +105,7 @@ df = df.loc[~(df.first_registration_year > datetime.date.today().year)]
 
 df.loc[df.stock_days<0].sort_values('stock_days').head(3)
 
-# It seems that `stock_days` does not strictly follow its definition as the time in days between the creation of the listing and the deletion of the listing. Recalculate `ctr` according to its definition: <br>
+# It seems that `stock_days` does not strictly follow its definition as the time in days between the creation of the listing and the deletion of the listing. Recalculate `stock_days` according to its definition: <br>
 # $stock\_days = deleted\_date - created\_date$
 
 df['stock_days'] = (df.deleted_date - df.created_date).dt.days
@@ -122,7 +122,7 @@ sns.heatmap(df.drop(columns=['article_id', 'product_tier',  'make_name', 'create
 # - Correlations between features are low in most cases
 # - Third strongest correlation between `stock_days` and `search_views`/`detail_views` which means that the longer a car is listed the more often it is shown/clicked.
 # - Second strongest (but still modest) correlation between `price` and `first_registration_year` indicating that newer vehicles are typically pricier (ignoring that old timers may be even more pricier). From this observation it makes sense to calculate the vehicle's age at the time it was listed on the online platform which is a better feature than `first_registration_year` because it captures the actual age of the car by additionally controlling when the car has been listed which can be at different points in time. This feature is defined as time between the vehicle's first registration and its listing date in years: $vehicle\_age = created\_date - first\_registration\_year$
-# - Strongest correlation between `search_views` and `detail_views` which is to be expected. The more often a product is shown to the customer, the more often this product is clicked by the customer. For the second modelling task this observation requires special attention.
+# - Strongest correlation between `search_views` and `detail_views` which is to be expected. The more often a product is shown to the customer, the more often this product is clicked by customers. For the second modelling task this observation requires special attention.
 
 # Let's calculate the vehicle's age which is more suited as feature than the product's first registration year. Note that for some observations year of first registration is greater than year of listing which results in a negative vehicle age. I tackle this data quality issue by replacing a negative vehicle age with zero (reflecting a new car) which seems to be a reasonable strategy.
 
@@ -238,7 +238,11 @@ fscore_tier = make_scorer(
     score_func=fbeta_score, 
     beta=1,                      # equal weight on Precision and Recall
     #labels=['Plus', 'Premium'], # focus on prediction quality of minority groups only
-    average='macro'              # calculate metrics for each label, and find their unweighted mean. This means that a high F-Score for the majority group but a low F-Score for the minority groups leads to an overall low F-Score. We aim at a model that performs well in distinguishing between the three categories
+    average='macro'              # calculate metrics for each label, and find their unweighted mean. 
+                                 # This means that a high F-Score for the majority group but a low F-Score for 
+                                 # the minority groups leads to an overall low F-Score. We aim at a model 
+                                 # that performs well in distinguishing between the three categories and 
+                                 # not at one that is biased towards the majority class.
     )       
 
 # Define the pipeline for each model
@@ -254,7 +258,7 @@ pipelines = [
         ('model', RandomForestClassifier(random_state=333))         # handles multiclass problem inherently
     ])),
     ('gradient_boosting', Pipeline([
-        ('model', GradientBoostingClassifier(random_state=333))     # handles multiclass problem inherently
+        ('model', GradientBoostingClassifier(random_state=333))     # handles multiclass problem as one-vs-rest: K trees (for K classes) are built at each of the M iterations
     ])),
     ('support_vector_machine', Pipeline([
         ('scaler', StandardScaler()),
@@ -346,7 +350,7 @@ with open(f'df_model_classification_{now}.csv', 'w') as csvFile:
 
 df_model = pd.read_csv('df_model_classification_29-04-24_175731.csv', sep=",")
 
-# For each model look at the best performing specification on the original validation sets and the oversampled validation sets.
+# For each model look at the best performing specification model specification (hyperparameter set).
 
 df_model.sort_values('MEAN_SCORE', ascending=False).groupby(['MODEL', 'SAMPLING']).head(1).sort_values(['MODEL', 'MEAN_SCORE'], ascending=False).style
 
@@ -355,7 +359,7 @@ md(f"""The best performing model is a {df_model.sort_values('MEAN_SCORE', ascend
 # +
 # Define the best performing model
 pipeline = Pipeline(steps=[
-    ('best_model', RandomForestClassifier(max_depth=None, min_samples_leaf=1, n_estimators=300, n_jobs=-1))
+    ('best_model', RandomForestClassifier(max_depth=None, min_samples_leaf=1, n_estimators=300, n_jobs=-1, random_state=333))
 ])
 
 # Train on the entire oversampled training data
@@ -369,8 +373,8 @@ print(classification_report(y_true=y_test, y_pred=y_pred))
 # -
 
 # We can see that the best performing model does not generalize well:
-# - from the 105 'Plus'|482 'Premium' products in the test data only 1|216 have been detected by the classifier (Recall = 1/105 = 0.01 | 216/482 = 0.45)
-# - for 12 vehicles in the test data the classifier has predicted that they are 'Plus' products. Only 1 of them is indeed a 'Plus' article (Precision = 1/12 = 0.08)
+# - from the 105 'Plus'|482 'Premium' products in the test data only 3|220 have been detected by the classifier (Recall = 3/105 = 0.03 | 220/482 = 0.46)
+# - for 10 vehicles in the test data the classifier has predicted that they are 'Plus' products. Only 3 of them is indeed a 'Plus' article (Precision = 3/10 = 0.30)
 
 # **This means that when the classifier is confronted with the real distribution of the target variable it does not help in reliably differentiating between 'Basic', 'Premium' and 'Plus' articles.**
 
@@ -426,7 +430,7 @@ plot_describe(df, df.drop(columns=['article_id', 'created_date', 'deleted_date',
 #   (2) the other one to predict `ctr` (exclude `search_views` and `detail_views` from feature set since they are used to calculate `ctr`)<br>
 # - we aim at approximating the best set of hyperparameters on validation sets using cross-validation in order to prevent overfitting.
 # - since the target variable is a count variable that follows a Poisson distribution, we prefer models that can be tuned on minimizing Poisson deviance. Poisson deviance specifically compares the observed counts with the predicted counts and is thus most suited for this use case.
-# - we evaluate the model performance on the mean Poisson deviance and the mean absolute error (MAE). To assess how well the model's perform we compare MAE against the MAE of a naive mean prediction.
+# - we evaluate the model performance on the mean Poisson deviance and the mean absolute error (MAE). To assess how well the models perform we compare MAE against the MAE of a naive mean prediction.
 # - for scale sensitive models we scale the features by subtracting their mean and dividing by their standard deviation.
 
 # +
@@ -579,6 +583,7 @@ md(f"""The best performing model makes an out-of-sample prediction error of {rou
 # +
 # Define the best performing model for ctr prediction
 pipeline = Pipeline(steps=[
+    ('scaler', StandardScaler()),
     ('best_model', HistGradientBoostingRegressor(learning_rate= 0.5, max_depth=2, max_iter=100, loss='poisson', random_state=333))
 ])
 
@@ -600,7 +605,7 @@ md(f"""Prediction error mean predictor: {round(mean_absolute_error(y_test, np.re
 # Error of naive predictor for ctr
 md(f"""Prediction error mean predictor: {round(mean_absolute_error(y_test_ctr, np.repeat(y_train_ctr.mean(), len(y_test_ctr)))*100,3)} percentage points""")
 
-# **This means that the prediction of the number of detail views works decently enough based on information about the product and possibly based information on marketing campaigns that drive search views. It is recommended to investigate this endeavor further. Prediction of click-through rates does not look promising based on the available features.**
+# **This means that the prediction of the number of detail views works decently enough based on information about the product and possibly based on information on marketing campaigns that drive search views. It is recommended to investigate this endeavor further. Prediction of click-through rates does not look promising based on the available features.**
 
 # These results come with many caveats:
 # - no knowledge about the actual business case, i.e. no exchange with business unit, no information on the underlying process/logic how products are prioritized in searches (is there any selection in place? any campaign in the training data?)
